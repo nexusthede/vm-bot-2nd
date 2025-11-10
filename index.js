@@ -11,7 +11,7 @@ const client = new Client({
     ]
 });
 
-const ALLOWED_GUILDS = ["1426789471776542803"];
+const ALLOWED_GUILDS = ["1426789471776542803"]; // your server only
 
 // --- Embed Helper ---
 async function sendEmbed(channel, type, description) {
@@ -64,14 +64,14 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
         }
     }
 
-    // --- Delete empty temp VCs (only in public) ---
+    // --- Delete empty temp VCs (only public) ---
     publicCat.children.cache.forEach(ch => {
         if (![joinCreate?.id, joinRandom?.id].includes(ch.id) && ch.members.size === 0) {
             ch.delete().catch(() => {});
         }
     });
 
-    // --- Move locked VCs to private ---
+    // --- Move locked VCs to private (keep perms intact) ---
     if (oldState.channel && oldState.channel.permissionOverwrites.cache.get(guild.id)?.deny.has(PermissionsBitField.Flags.Connect) && oldState.channel.parentId !== privateCat.id) {
         await oldState.channel.setParent(privateCat.id).catch(() => {});
     }
@@ -99,28 +99,33 @@ client.on("messageCreate", async message => {
         switch(sub) {
             case "lock":
                 if (member.id !== ownerId) return await sendEmbed(message.channel,"fail","only vc owner can lock.");
-                await vc.permissionOverwrites.edit(message.guild.id, { Connect: false, ViewChannel: false });
+                await vc.permissionOverwrites.edit(message.guild.id, { Connect: false });
+                await vc.permissionOverwrites.edit(ownerId, { Connect: true, ManageChannels: true, MuteMembers: true, MoveMembers: true });
                 const privateCat = vc.guild.channels.cache.find(c => c.name.toLowerCase() === "private vcs" && c.type === ChannelType.GuildCategory);
-                if (privateCat) await vc.setParent(privateCat.id);
+                if (privateCat) await vc.setParent(privateCat.id).catch(()=>{});
                 await sendEmbed(message.channel,"success","vc locked and moved to private vcs!");
                 break;
+
             case "unlock":
                 if (member.id !== ownerId) return await sendEmbed(message.channel,"fail","only vc owner can unlock.");
-                await vc.permissionOverwrites.edit(message.guild.id, { Connect: true, ViewChannel: true });
+                await vc.permissionOverwrites.edit(message.guild.id, { Connect: true });
                 const publicCat = vc.guild.channels.cache.find(c => c.name.toLowerCase() === "public vcs" && c.type === ChannelType.GuildCategory);
-                if (publicCat) await vc.setParent(publicCat.id);
+                if (publicCat) await vc.setParent(publicCat.id).catch(()=>{});
                 await sendEmbed(message.channel,"success","vc unlocked and moved to public vcs!");
                 break;
+
             case "hide":
                 if (member.id !== ownerId) return await sendEmbed(message.channel,"fail","only vc owner can hide.");
                 await vc.permissionOverwrites.edit(message.guild.id, { ViewChannel: false });
                 await sendEmbed(message.channel,"success","vc hidden!");
                 break;
+
             case "unhide":
                 if (member.id !== ownerId) return await sendEmbed(message.channel,"fail","only vc owner can unhide.");
                 await vc.permissionOverwrites.edit(message.guild.id, { ViewChannel: true });
                 await sendEmbed(message.channel,"success","vc visible!");
                 break;
+
             case "kick":
                 if (member.id !== ownerId) return await sendEmbed(message.channel,"fail","only vc owner can kick.");
                 if (!target) return await sendEmbed(message.channel,"fail","mention a user to kick.");
@@ -128,36 +133,42 @@ client.on("messageCreate", async message => {
                 await target.voice.disconnect();
                 await sendEmbed(message.channel,"success",`${target.user.tag} kicked from vc.`);
                 break;
+
             case "ban":
                 if (member.id !== ownerId) return await sendEmbed(message.channel,"fail","only vc owner can ban.");
                 if (!target) return await sendEmbed(message.channel,"fail","mention a user to ban.");
                 await vc.permissionOverwrites.edit(target.id,{ Connect: false });
                 await sendEmbed(message.channel,"success",`${target.user.tag} banned from vc.`);
                 break;
+
             case "permit":
                 if (member.id !== ownerId) return await sendEmbed(message.channel,"fail","only vc owner can permit.");
                 if (!target) return await sendEmbed(message.channel,"fail","mention a user to permit.");
                 await vc.permissionOverwrites.edit(target.id,{ Connect: true });
                 await sendEmbed(message.channel,"success",`${target.user.tag} permitted in vc.`);
                 break;
+
             case "limit":
                 const limit = parseInt(args[1]);
                 if (isNaN(limit)) return await sendEmbed(message.channel,"fail","provide a number as limit.");
                 await vc.setUserLimit(limit);
                 await sendEmbed(message.channel,"success",`vc user limit set to ${limit}.`);
                 break;
+
             case "rename":
                 const newName = args.slice(1).join(" ");
                 if (!newName) return await sendEmbed(message.channel,"fail","provide a new name.");
                 await vc.setName(newName);
                 await sendEmbed(message.channel,"success",`vc renamed to ${newName}.`);
                 break;
+
             case "transfer":
                 if (!target) return await sendEmbed(message.channel,"fail","mention a user to transfer ownership.");
                 await vc.permissionOverwrites.edit(ownerId, { Connect: false, ManageChannels: false });
                 await vc.permissionOverwrites.edit(target.id, { Connect: true, ManageChannels: true });
                 await sendEmbed(message.channel,"success",`ownership transferred to ${target.user.tag}.`);
                 break;
+
             case "info":
                 const infoEmbed = new EmbedBuilder()
                     .setTitle(`${emojis.success} vc info`)
@@ -166,6 +177,7 @@ client.on("messageCreate", async message => {
                     .setTimestamp();
                 await message.channel.send({ embeds: [infoEmbed] });
                 break;
+
             case "unmute":
                 await member.voice.setMute(false);
                 await sendEmbed(message.channel,"success","you are now unmuted!");
