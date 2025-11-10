@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, EmbedBuilder, ChannelType } = require("discord.js");
+const { Client, GatewayIntentBits, EmbedBuilder, ChannelType, PermissionsBitField } = require("discord.js");
 const { emojis, prefix } = require("./config");
 require("./keep_alive");
 
@@ -11,8 +11,7 @@ const client = new Client({
     ]
 });
 
-// --- Whitelist ---
-const ALLOWED_GUILDS = ["1426789471776542803"]; // your server ID
+const ALLOWED_GUILDS = ["1426789471776542803"];
 
 // --- Embed Helper ---
 async function sendEmbed(channel, type, description) {
@@ -29,41 +28,35 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
     const guild = newState.guild;
     if (!guild || !ALLOWED_GUILDS.includes(guild.id)) return;
 
-    // --- get categories ---
     let publicCat = guild.channels.cache.find(c => c.name.toLowerCase() === "public vcs" && c.type === ChannelType.GuildCategory);
     let privateCat = guild.channels.cache.find(c => c.name.toLowerCase() === "private vcs" && c.type === ChannelType.GuildCategory);
 
-    // create categories if missing
     if (!publicCat) publicCat = await guild.channels.create({ name: "public vcs", type: ChannelType.GuildCategory });
     if (!privateCat) privateCat = await guild.channels.create({ name: "private vcs", type: ChannelType.GuildCategory });
 
-    // --- base VCs ---
-    let joinCreate = guild.channels.cache.find(c => c.name.toLowerCase() === "join to create" && c.parentId === publicCat.id);
-    let joinRandom = guild.channels.cache.find(c => c.name.toLowerCase() === "join a random vc" && c.parentId === publicCat.id);
-
-    if (!joinCreate) joinCreate = await guild.channels.create({ name: "join to create", type: ChannelType.GuildVoice, parent: publicCat.id });
-    if (!joinRandom) joinRandom = await guild.channels.create({ name: "join a random vc", type: ChannelType.GuildVoice, parent: publicCat.id });
+    const joinCreate = guild.channels.cache.find(c => c.name.toLowerCase() === "join to create" && c.parentId === publicCat.id);
+    const joinRandom = guild.channels.cache.find(c => c.name.toLowerCase() === "join a random vc" && c.parentId === publicCat.id);
 
     const channelId = newState.channel?.id;
 
-    // --- temp VC creation ---
-    if (channelId === joinCreate.id) {
+    // --- Create temp VC ---
+    if (channelId === joinCreate?.id) {
         const tempVC = await guild.channels.create({
             name: `${newState.member.user.username}'s vc`,
             type: ChannelType.GuildVoice,
             parent: publicCat.id,
             permissionOverwrites: [
                 { id: guild.id, allow: ["Connect", "ViewChannel"] },
-                { id: newState.member.id, allow: ["ManageChannels", "MuteMembers", "MoveMembers"] }
+                { id: newState.member.id, allow: ["Connect", "ViewChannel", "ManageChannels", "MuteMembers", "MoveMembers"] }
             ]
         });
         await newState.setChannel(tempVC);
     }
 
-    // --- join random VC ---
-    if (channelId === joinRandom.id) {
+    // --- Join random VC ---
+    if (channelId === joinRandom?.id) {
         const availableVCs = publicCat.children.cache.filter(
-            c => c.type === ChannelType.GuildVoice && ![joinCreate.id, joinRandom.id].includes(c.id) && c.members.size < (c.userLimit || Infinity)
+            c => c.type === ChannelType.GuildVoice && ![joinCreate?.id, joinRandom?.id].includes(c.id) && c.members.size < (c.userLimit || Infinity)
         );
         if (availableVCs.size) {
             const randomVC = availableVCs.random();
@@ -71,16 +64,15 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
         }
     }
 
-    // --- delete empty temp VCs ---
-    [publicCat, privateCat].forEach(cat => {
-        if (!cat?.children) return;
-        cat.children.cache.forEach(ch => {
-            if (![joinCreate.id, joinRandom.id].includes(ch.id) && ch.members.size === 0) ch.delete().catch(() => {});
-        });
+    // --- Delete empty temp VCs (only in public) ---
+    publicCat.children.cache.forEach(ch => {
+        if (![joinCreate?.id, joinRandom?.id].includes(ch.id) && ch.members.size === 0) {
+            ch.delete().catch(() => {});
+        }
     });
 
-    // --- move locked VCs to private ---
-    if (oldState.channel && oldState.channel.permissionOverwrites.cache.get(guild.id)?.deny?.has("Connect") && oldState.channel.parentId !== privateCat.id) {
+    // --- Move locked VCs to private ---
+    if (oldState.channel && oldState.channel.permissionOverwrites.cache.get(guild.id)?.deny.has(PermissionsBitField.Flags.Connect) && oldState.channel.parentId !== privateCat.id) {
         await oldState.channel.setParent(privateCat.id).catch(() => {});
     }
 });
@@ -183,7 +175,7 @@ client.on("messageCreate", async message => {
 
     // --- VM Setup ---
     if (cmd === "vmsetup") {
-        if (!member.permissions.has("ManageChannels")) return await sendEmbed(message.channel,"fail","you need manage channels permission.");
+        if (!member.permissions.has(PermissionsBitField.Flags.ManageChannels)) return await sendEmbed(message.channel,"fail","you need manage channels permission.");
         const guild = message.guild;
 
         let publicCat = guild.channels.cache.find(c => c.name.toLowerCase() === "public vcs" && c.type === ChannelType.GuildCategory);
@@ -203,7 +195,7 @@ client.on("messageCreate", async message => {
 
     // --- VM Reset ---
     if (cmd === "vmreset") {
-        if (!member.permissions.has("ManageChannels")) return await sendEmbed(message.channel,"fail","you need manage channels permission.");
+        if (!member.permissions.has(PermissionsBitField.Flags.ManageChannels)) return await sendEmbed(message.channel,"fail","you need manage channels permission.");
         const guild = message.guild;
 
         ["public vcs","private vcs"].forEach(catName => {
