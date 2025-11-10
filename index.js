@@ -1,5 +1,5 @@
 const { Client, GatewayIntentBits, EmbedBuilder, ChannelType } = require("discord.js");
-const { emojis, prefix, categories, baseVCs } = require("./config");
+const { emojis, prefix } = require("./config");
 require("./keep_alive");
 
 const client = new Client({
@@ -33,10 +33,11 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
     const guild = newState.guild;
     if (!guild || !ALLOWED_GUILDS.includes(guild.id)) return;
 
-    const publicCat = guild.channels.cache.get(categories.public);
-    const privateCat = guild.channels.cache.get(categories.private);
-    const joinCreateVC = guild.channels.cache.get(baseVCs.joinCreate);
-    const joinRandomVC = guild.channels.cache.get(baseVCs.joinRandom);
+    // Get categories and base VCs by ID (adjust IDs below)
+    const publicCat = guild.channels.cache.get("PUBLIC_CATEGORY_ID"); 
+    const privateCat = guild.channels.cache.get("PRIVATE_CATEGORY_ID");
+    const joinCreateVC = guild.channels.cache.get("JOIN_CREATE_VC_ID");
+    const joinRandomVC = guild.channels.cache.get("JOIN_RANDOM_VC_ID");
 
     const channelId = newState.channel?.id;
 
@@ -56,11 +57,11 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
 
     // --- Join Random VC ---
     if (channelId === joinRandomVC?.id && publicCat) {
-        const tempVCs = publicCat.children.cache.filter(
+        const publicVCs = publicCat.children.cache.filter(
             c => c.type === ChannelType.GuildVoice && ![joinCreateVC?.id, joinRandomVC?.id].includes(c.id) && c.members.size < (c.userLimit || Infinity)
         );
-        if (tempVCs.size) {
-            const randomVC = tempVCs.random();
+        if (publicVCs.size) {
+            const randomVC = publicVCs.random();
             await newState.setChannel(randomVC);
         }
     }
@@ -183,15 +184,15 @@ client.on("messageCreate", async message => {
     // -------------------- VM Setup --------------------
     if (cmd === "vmsetup") {
         if (!member.permissions.has("ManageChannels")) return await sendEmbed(message.channel,"fail","You need Manage Channels permission.");
-
         const guild = message.guild;
-        let publicCat = guild.channels.cache.get(categories.public);
-        if (!publicCat) publicCat = await guild.channels.create({ name:"Public VC", type: ChannelType.GuildCategory });
-        let privateCat = guild.channels.cache.get(categories.private);
-        if (!privateCat) privateCat = await guild.channels.create({ name:"Private VC", type: ChannelType.GuildCategory });
 
-        const joinCreateVC = guild.channels.cache.get(baseVCs.joinCreate) || await guild.channels.create({ name:"Join to Create", type: ChannelType.GuildVoice, parent: publicCat.id });
-        const joinRandomVC = guild.channels.cache.get(baseVCs.joinRandom) || await guild.channels.create({ name:"Join a Random VC", type: ChannelType.GuildVoice, parent: publicCat.id });
+        // Create categories if missing
+        let publicCat = guild.channels.cache.get("PUBLIC_CATEGORY_ID") || await guild.channels.create({ name:"Public VC", type:ChannelType.GuildCategory });
+        let privateCat = guild.channels.cache.get("PRIVATE_CATEGORY_ID") || await guild.channels.create({ name:"Private VC", type:ChannelType.GuildCategory });
+
+        // Create base VCs if missing
+        const joinCreateVC = guild.channels.cache.get("JOIN_CREATE_VC_ID") || await guild.channels.create({ name:"Join to Create", type:ChannelType.GuildVoice, parent:publicCat.id });
+        const joinRandomVC = guild.channels.cache.get("JOIN_RANDOM_VC_ID") || await guild.channels.create({ name:"Join a Random VC", type:ChannelType.GuildVoice, parent:publicCat.id });
 
         await sendEmbed(message.channel,"success","Voice Master setup complete!");
     }
@@ -201,14 +202,14 @@ client.on("messageCreate", async message => {
         if (!member.permissions.has("ManageChannels")) return await sendEmbed(message.channel,"fail","You need Manage Channels permission.");
         const guild = message.guild;
 
-        [categories.public,categories.private].forEach(catId => {
+        ["PUBLIC_CATEGORY_ID","PRIVATE_CATEGORY_ID"].forEach(catId => {
             const cat = guild.channels.cache.get(catId);
             if (cat) cat.children.cache.forEach(ch => {
-                if (![baseVCs.joinCreate,baseVCs.joinRandom].includes(ch.id)) ch.delete().catch(()=>{});
+                if (!["JOIN_CREATE_VC_ID","JOIN_RANDOM_VC_ID"].includes(ch.id)) ch.delete().catch(()=>{});
             });
         });
 
-        [baseVCs.joinCreate,baseVCs.joinRandom].forEach(async id => {
+        ["JOIN_CREATE_VC_ID","JOIN_RANDOM_VC_ID"].forEach(async id => {
             const ch = guild.channels.cache.get(id);
             if (ch) await ch.delete().catch(()=>{});
         });
