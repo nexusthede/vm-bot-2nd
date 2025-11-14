@@ -1,5 +1,6 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
-require("./keep_alive"); // keep-alive server for Render/BetterStack
+require("./keep_alive"); // keep-alive for Render/BetterStack
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -32,11 +33,8 @@ client.on("guildCreate", async guild => {
 
 client.once("ready", async () => {
     console.log(`${client.user.tag} is online!`);
-
-    // Green streaming icon with no visible text
     client.user.setActivity("\u200B", { type: "STREAMING", url: "https://twitch.tv/fake" });
 
-    // Leave unauthorized servers
     client.guilds.cache.forEach(async guild => {
         if (guild.id !== ALLOWED_GUILD) await guild.leave();
     });
@@ -77,15 +75,6 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
         await newState.setChannel(randomVC);
     }
 
-    // --- Move to private when hidden or locked ---
-    if (newState.channel?.parentId === publicCat?.id) {
-        const overwrites = newState.channel.permissionOverwrites.cache;
-        const guildConnect = overwrites.get(guild.id);
-        if (guildConnect && (guildConnect.deny.has("Connect") || guildConnect.deny.has("ViewChannel"))) {
-            if (privateCat) await newState.channel.setParent(privateCat.id);
-        }
-    }
-
     // --- Delete empty temp VCs ---
     [publicCat, privateCat].forEach(cat => {
         if (!cat) return;
@@ -107,6 +96,10 @@ client.on("messageCreate", async message => {
     const cmd = args.shift().toLowerCase();
     const member = message.member;
     const vc = member.voice.channel;
+
+    const masterCat = message.guild.channels.cache.find(c => c.name === "voice master" && c.type === 4);
+    const publicCat = message.guild.channels.cache.find(c => c.name === "public vcs" && c.type === 4);
+    const privateCat = message.guild.channels.cache.find(c => c.name === "private vcs" && c.type === 4);
 
     // ------------------- VM SETUP -------------------
     if (cmd === "vmsetup") {
@@ -156,12 +149,26 @@ client.on("messageCreate", async message => {
     switch(sub) {
         case "lock":
             await vc.permissionOverwrites.edit(message.guild.id, { Connect: false });
+            if (privateCat) await vc.setParent(privateCat.id);
             await sendVCEmbed(message.channel, "**your voice channel has been locked.**");
             break;
 
         case "unlock":
             await vc.permissionOverwrites.edit(message.guild.id, { Connect: true });
+            if (publicCat) await vc.setParent(publicCat.id);
             await sendVCEmbed(message.channel, "**your voice channel has been unlocked.**");
+            break;
+
+        case "hide":
+            await vc.permissionOverwrites.edit(message.guild.id, { ViewChannel: false });
+            if (privateCat) await vc.setParent(privateCat.id);
+            await sendVCEmbed(message.channel, "**your voice channel is now hidden.**");
+            break;
+
+        case "unhide":
+            await vc.permissionOverwrites.edit(message.guild.id, { ViewChannel: true });
+            if (publicCat) await vc.setParent(publicCat.id);
+            await sendVCEmbed(message.channel, "**your voice channel is now visible.**");
             break;
 
         case "kick":
@@ -216,18 +223,6 @@ client.on("messageCreate", async message => {
         case "unmute":
             await member.voice.setMute(false);
             await sendVCEmbed(message.channel, "you are now unmuted in your voice channel.");
-            break;
-
-        case "hide":
-            await vc.permissionOverwrites.edit(message.guild.id, { ViewChannel: false });
-            if (privateCat) await vc.setParent(privateCat.id);
-            await sendVCEmbed(message.channel, "your voice channel is now hidden.");
-            break;
-
-        case "unhide":
-            await vc.permissionOverwrites.edit(message.guild.id, { ViewChannel: true });
-            if (publicCat) await vc.setParent(publicCat.id);
-            await sendVCEmbed(message.channel, "your voice channel is now visible.");
             break;
 
         default:
