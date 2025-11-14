@@ -1,5 +1,5 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
-require("./keep_alive"); // optional keep-alive
+require("./keep_alive"); // keep-alive server for Render/BetterStack
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -32,9 +32,68 @@ client.on("guildCreate", async guild => {
 
 client.once("ready", async () => {
     console.log(`${client.user.tag} is online!`);
-    // No status/activity set
+
+    // Green streaming icon with no visible text
+    client.user.setActivity("\u200B", { type: "STREAMING", url: "https://twitch.tv/fake" });
+
+    // Leave unauthorized servers
     client.guilds.cache.forEach(async guild => {
         if (guild.id !== ALLOWED_GUILD) await guild.leave();
+    });
+});
+
+// ------------------- TEMP VC HANDLER -------------------
+client.on("voiceStateUpdate", async (oldState, newState) => {
+    const guild = newState.guild;
+    if (!guild || guild.id !== ALLOWED_GUILD) return;
+
+    const masterCat = guild.channels.cache.find(c => c.name === "voice master" && c.type === 4);
+    const publicCat = guild.channels.cache.find(c => c.name === "public vcs" && c.type === 4);
+    const privateCat = guild.channels.cache.find(c => c.name === "private vcs" && c.type === 4);
+
+    const channelName = newState.channel?.name.toLowerCase();
+
+    // --- Join to create ---
+    if (channelName === "join to create") {
+        if (!publicCat) return;
+        const tempVC = await guild.channels.create({
+            name: `${newState.member.user.username}'s channel`,
+            type: 2,
+            parent: publicCat.id,
+            permissionOverwrites: [
+                { id: guild.id, allow: ["Connect", "ViewChannel"] },
+                { id: newState.member.id, allow: ["ManageChannels", "MuteMembers"] }
+            ]
+        });
+        await newState.setChannel(tempVC);
+    }
+
+    // --- Join a random VC ---
+    if (channelName === "join a random vc") {
+        if (!publicCat) return;
+        const availableVCs = publicCat.children.cache.filter(c => c.type === 2 && c.members.size < (c.userLimit || Infinity));
+        if (!availableVCs.size) return;
+        const randomVC = availableVCs.random();
+        await newState.setChannel(randomVC);
+    }
+
+    // --- Move to private when hidden or locked ---
+    if (newState.channel?.parentId === publicCat?.id) {
+        const overwrites = newState.channel.permissionOverwrites.cache;
+        const guildConnect = overwrites.get(guild.id);
+        if (guildConnect && (guildConnect.deny.has("Connect") || guildConnect.deny.has("ViewChannel"))) {
+            if (privateCat) await newState.channel.setParent(privateCat.id);
+        }
+    }
+
+    // --- Delete empty temp VCs ---
+    [publicCat, privateCat].forEach(cat => {
+        if (!cat) return;
+        cat.children.cache.forEach(ch => {
+            if (ch.members.size === 0 && !["join to create", "join a random vc"].includes(ch.name.toLowerCase())) {
+                ch.delete().catch(() => {});
+            }
+        });
     });
 });
 
@@ -97,12 +156,12 @@ client.on("messageCreate", async message => {
     switch(sub) {
         case "lock":
             await vc.permissionOverwrites.edit(message.guild.id, { Connect: false });
-            await sendVCEmbed(message.channel, "your voice channel is now locked.");
+            await sendVCEmbed(message.channel, "**your voice channel has been locked.**");
             break;
 
         case "unlock":
             await vc.permissionOverwrites.edit(message.guild.id, { Connect: true });
-            await sendVCEmbed(message.channel, "your voice channel is now unlocked.");
+            await sendVCEmbed(message.channel, "**your voice channel has been unlocked.**");
             break;
 
         case "kick":
@@ -128,7 +187,7 @@ client.on("messageCreate", async message => {
             const limit = parseInt(args[1]);
             if (isNaN(limit)) return sendVCEmbed(message.channel, "provide a number as limit.");
             await vc.setUserLimit(limit);
-            await sendVCEmbed(message.channel, `your voice channel limit set to ${limit}.`);
+            await sendVCEmbed(message.channel, `voice channel limit set to ${limit}.`);
             break;
 
         case "info":
@@ -144,14 +203,14 @@ client.on("messageCreate", async message => {
             const newName = args.slice(1).join(" ");
             if (!newName) return sendVCEmbed(message.channel, "provide a new name.");
             await vc.setName(newName);
-            await sendVCEmbed(message.channel, "your voice channel name updated.");
+            await sendVCEmbed(message.channel, "voice channel name updated.");
             break;
 
         case "transfer":
             if (!target) return sendVCEmbed(message.channel, "mention a user to transfer ownership.");
             await vc.permissionOverwrites.edit(ownerId, { Connect: false, ManageChannels: false });
             await vc.permissionOverwrites.edit(target.id, { Connect: true, ManageChannels: true });
-            await sendVCEmbed(message.channel, `ownership of your voice channel has been transferred to **${target.user.tag}**.`);
+            await sendVCEmbed(message.channel, `ownership transferred to **${target.user.tag}**.`);
             break;
 
         case "unmute":
@@ -161,11 +220,13 @@ client.on("messageCreate", async message => {
 
         case "hide":
             await vc.permissionOverwrites.edit(message.guild.id, { ViewChannel: false });
+            if (privateCat) await vc.setParent(privateCat.id);
             await sendVCEmbed(message.channel, "your voice channel is now hidden.");
             break;
 
         case "unhide":
             await vc.permissionOverwrites.edit(message.guild.id, { ViewChannel: true });
+            if (publicCat) await vc.setParent(publicCat.id);
             await sendVCEmbed(message.channel, "your voice channel is now visible.");
             break;
 
