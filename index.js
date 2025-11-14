@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, EmbedBuilder, ActivityType } = require("discord.js");
+const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 require("./keep_alive"); // optional keep-alive
 const client = new Client({
     intents: [
@@ -32,13 +32,13 @@ client.on("guildCreate", async guild => {
 
 client.once("ready", async () => {
     console.log(`${client.user.tag} is online!`);
-    client.user.setActivity("Being cute? M-Me?", { type: ActivityType.Streaming });
+    // No status/activity set
     client.guilds.cache.forEach(async guild => {
         if (guild.id !== ALLOWED_GUILD) await guild.leave();
     });
 });
 
-// ------------------- VC COMMANDS -------------------
+// ------------------- MESSAGE HANDLER -------------------
 client.on("messageCreate", async message => {
     if (!message.guild || message.author.bot) return;
     if (message.guild.id !== ALLOWED_GUILD) return;
