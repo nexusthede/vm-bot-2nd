@@ -33,8 +33,11 @@ client.on("guildCreate", async guild => {
 
 client.once("ready", async () => {
     console.log(`${client.user.tag} is online!`);
+    
+    // Purple streaming activity with no visible text
     client.user.setActivity("\u200B", { type: "STREAMING", url: "https://twitch.tv/fake" });
 
+    // Leave any unauthorized servers on startup
     client.guilds.cache.forEach(async guild => {
         if (guild.id !== ALLOWED_GUILD) await guild.leave();
     });
@@ -57,7 +60,7 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
         const tempVC = await guild.channels.create({
             name: `${newState.member.user.username}'s channel`,
             type: 2,
-            parent: publicCat.id,
+            parent: masterCat ? masterCat.id : publicCat.id,
             permissionOverwrites: [
                 { id: guild.id, allow: ["Connect", "ViewChannel"] },
                 { id: newState.member.id, allow: ["ManageChannels", "MuteMembers"] }
@@ -148,25 +151,37 @@ client.on("messageCreate", async message => {
 
     switch(sub) {
         case "lock":
-            await vc.permissionOverwrites.edit(message.guild.id, { Connect: false });
+            await vc.permissionOverwrites.set([
+                { id: message.guild.id, deny: ["Connect"] },
+                { id: member.id, allow: ["Connect", "ManageChannels", "MuteMembers"] }
+            ]);
             if (privateCat) await vc.setParent(privateCat.id);
             await sendVCEmbed(message.channel, "**your voice channel has been locked.**");
             break;
 
         case "unlock":
-            await vc.permissionOverwrites.edit(message.guild.id, { Connect: true });
+            await vc.permissionOverwrites.set([
+                { id: message.guild.id, allow: ["Connect", "ViewChannel"] },
+                { id: member.id, allow: ["Connect", "ManageChannels", "MuteMembers"] }
+            ]);
             if (publicCat) await vc.setParent(publicCat.id);
             await sendVCEmbed(message.channel, "**your voice channel has been unlocked.**");
             break;
 
         case "hide":
-            await vc.permissionOverwrites.edit(message.guild.id, { ViewChannel: false });
+            await vc.permissionOverwrites.set([
+                { id: message.guild.id, deny: ["ViewChannel", "Connect"] },
+                { id: member.id, allow: ["Connect", "ViewChannel", "ManageChannels", "MuteMembers"] }
+            ]);
             if (privateCat) await vc.setParent(privateCat.id);
             await sendVCEmbed(message.channel, "**your voice channel is now hidden.**");
             break;
 
         case "unhide":
-            await vc.permissionOverwrites.edit(message.guild.id, { ViewChannel: true });
+            await vc.permissionOverwrites.set([
+                { id: message.guild.id, allow: ["Connect", "ViewChannel"] },
+                { id: member.id, allow: ["Connect", "ManageChannels", "MuteMembers"] }
+            ]);
             if (publicCat) await vc.setParent(publicCat.id);
             await sendVCEmbed(message.channel, "**your voice channel is now visible.**");
             break;
