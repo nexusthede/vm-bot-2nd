@@ -1,5 +1,5 @@
-const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
-require("./keep_alive"); // optional keep-alive server
+const { Client, GatewayIntentBits, EmbedBuilder, ActivityType } = require("discord.js");
+require("./keep_alive"); // optional keep-alive
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -32,6 +32,7 @@ client.on("guildCreate", async guild => {
 
 client.once("ready", async () => {
     console.log(`${client.user.tag} is online!`);
+    client.user.setActivity("Being cute? M-Me?", { type: ActivityType.Streaming });
     client.guilds.cache.forEach(async guild => {
         if (guild.id !== ALLOWED_GUILD) await guild.leave();
     });
@@ -48,6 +49,43 @@ client.on("messageCreate", async message => {
     const member = message.member;
     const vc = member.voice.channel;
 
+    // ------------------- VM SETUP -------------------
+    if (cmd === "vmsetup") {
+        if (!member.permissions.has("ManageChannels")) return sendVCEmbed(message.channel, "you need manage channels permission.");
+        const categories = { master: "voice master", public: "public vcs", private: "private vcs" };
+        const createdCats = {};
+
+        for (const [key, name] of Object.entries(categories)) {
+            let cat = message.guild.channels.cache.find(c => c.name === name && c.type === 4);
+            if (!cat) cat = await message.guild.channels.create({ name, type: 4 });
+            createdCats[key] = cat;
+        }
+
+        const masterVCs = ["join to create", "join a random vc"];
+        for (const vcName of masterVCs) {
+            if (!message.guild.channels.cache.find(c => c.name === vcName && c.parentId === createdCats.master.id)) {
+                await message.guild.channels.create({ name: vcName, type: 2, parent: createdCats.master.id });
+            }
+        }
+
+        return sendVCEmbed(message.channel, "voice master setup complete!");
+    }
+
+    // ------------------- VM RESET -------------------
+    if (cmd === "vmreset") {
+        if (!member.permissions.has("ManageChannels")) return sendVCEmbed(message.channel, "you need manage channels permission.");
+        const categoriesToDelete = ["voice master", "public vcs", "private vcs"];
+        for (const catName of categoriesToDelete) {
+            const cat = message.guild.channels.cache.find(c => c.name === catName && c.type === 4);
+            if (cat) {
+                cat.children.cache.forEach(async ch => await ch.delete().catch(() => {}));
+                await cat.delete().catch(() => {});
+            }
+        }
+        return sendVCEmbed(message.channel, "voice master has been reset!");
+    }
+
+    // ------------------- VC COMMANDS -------------------
     if (cmd !== "vc") return;
     const sub = args[0]?.toLowerCase();
     if (!sub) return sendVCEmbed(message.channel, "specify a subcommand.");
